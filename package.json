@@ -1,0 +1,1 @@
+{"description":"YouTube 每日热门：展示各地区热门视频","engines":{"node":">=18"},"main":"server.js","name":"yt-trending","private":true,"scripts":{"start":"node server.js"},"version":"1.0.0"}

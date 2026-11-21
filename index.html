@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>每日热门 - YouTube 热门视频</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f9f9f9; color: #0f0f0f; }
+  header { background: #fff; border-bottom: 1px solid #e5e5e5; padding: 16px 20px; position: sticky; top: 0; z-index: 10; }
+  header h1 { margin: 0 0 4px; font-size: 22px; }
+  header h1 span { color: #ff0000; }
+  header p { margin: 0; color: #606060; font-size: 14px; }
+  main { max-width: 1080px; margin: 0 auto; padding: 16px 20px 40px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .tab { border: 1px solid #ddd; background: #fff; border-radius: 20px; padding: 7px 14px; font-size: 14px; cursor: pointer; }
+  .tab.active { background: #0f0f0f; color: #fff; border-color: #0f0f0f; }
+  select { font-size: 14px; padding: 7px 10px; border: 1px solid #ddd; border-radius: 8px; background: #fff; }
+  .meta { display: flex; align-items: center; gap: 12px; color: #606060; font-size: 13px; margin: 10px 0 16px; }
+  .meta button { border: 1px solid #ddd; background: #fff; border-radius: 16px; padding: 5px 14px; font-size: 13px; cursor: pointer; }
+  .meta button:hover { background: #f0f0f0; }
+  .notice { background: #fff3cd; border: 1px solid #ffe08a; border-radius: 8px; padding: 14px 16px; color: #664d03; margin-bottom: 16px; }
+  .error { background: #fdecea; border: 1px solid #f5c6c2; border-radius: 8px; padding: 14px 16px; color: #842029; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+  .card { background: #fff; border: 1px solid #e5e5e5; border-radius: 12px; overflow: hidden; }
+  .card a.thumb { display: block; position: relative; aspect-ratio: 16 / 9; background: #000; }
+  .card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .rank { position: absolute; left: 8px; top: 8px; background: rgba(0,0,0,.75); color: #fff; font-size: 12px; font-weight: bold; border-radius: 4px; padding: 2px 7px; }
+  .card .body { padding: 12px 14px 14px; }
+  .card h3 { margin: 0 0 8px; font-size: 15px; line-height: 1.45; }
+  .card h3 a { color: #0f0f0f; text-decoration: none; }
+  .card h3 a:hover { color: #065fd4; }
+  .card .channel { font-size: 13px; color: #606060; margin-bottom: 6px; }
+  .card .stats { font-size: 13px; color: #606060; }
+  .loading { color: #606060; padding: 30px 0; text-align: center; }
+  .empty { color: #606060; padding: 30px 0; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>▶</span> 每日热门</h1>
+  <p>YouTube 各地区热门视频,每 30 分钟更新一次</p>
+</header>
+<main>
+  <div class="controls" id="regions"></div>
+  <div class="controls">
+    <label for="category">分类:</label>
+    <select id="category"></select>
+  </div>
+  <div class="meta">
+    <span id="updated">—</span>
+    <button id="refresh" type="button">↻ 刷新</button>
+  </div>
+  <div id="notice"></div>
+  <div id="list"><div class="loading">加载中…</div></div>
+</main>
+<script>
+var REGIONS = [
+  ['SG', '新加坡'], ['US', '美国'], ['JP', '日本'],
+  ['TW', '台湾'], ['KR', '韩国'], ['GB', '英国']
+];
+var CATEGORIES = [
+  ['', '全部'], ['10', '音乐'], ['20', '游戏'], ['24', '娱乐'],
+  ['25', '新闻与政治'], ['17', '体育'], ['28', '科技'],
+  ['23', '喜剧'], ['1', '电影与动画'], ['22', '人物与博客']
+];
+var region = 'SG';
+var category = '';
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function fmtNum(n) {
+  if (n == null) return '—';
+  if (n >= 10000) return (n / 10000).toFixed(1).replace(/\.0$/, '') + '万';
+  return String(n);
+}
+function fmtDate(iso) {
+  if (!iso) return '';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function fmtTime(iso) {
+  if (!iso) return '—';
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleString('zh-CN', { hour12: false });
+}
+
+function renderRegions() {
+  var box = document.getElementById('regions');
+  box.innerHTML = '';
+  REGIONS.forEach(function (r) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tab' + (r[0] === region ? ' active' : '');
+    b.textContent = r[0] + ' ' + r[1];
+    b.onclick = function () {
+      if (region !== r[0]) { region = r[0]; renderRegions(); load(); }
+    };
+    box.appendChild(b);
+  });
+}
+function renderCategories() {
+  var sel = document.getElementById('category');
+  sel.innerHTML = '';
+  CATEGORIES.forEach(function (c) {
+    var o = document.createElement('option');
+    o.value = c[0];
+    o.textContent = c[1];
+    if (c[0] === category) o.selected = true;
+    sel.appendChild(o);
+  });
+}
+
+function render(data) {
+  var notice = document.getElementById('notice');
+  var list = document.getElementById('list');
+  notice.innerHTML = '';
+  if (data.error === 'missing_key') {
+    notice.innerHTML = '<div class="notice">尚未配置 YouTube API Key:请在部署平台的环境变量里设置 YT_API_KEY(YouTube Data API v3 的 key),再刷新页面。</div>';
+    list.innerHTML = '<div class="empty">暂无数据</div>';
+    document.getElementById('updated').textContent = '—';
+    return;
+  }
+  if (data.error) {
+    var html = '<div class="error">拉取热门榜失败:' + esc(data.message || data.error) + (data.stale ? ' 下面显示的是上次缓存的数据。' : '') + '</div>';
+    notice.innerHTML = html;
+    if (!data.items || !data.items.length) {
+      list.innerHTML = '<div class="empty">暂无数据,稍后再试</div>';
+      document.getElementById('updated').textContent = '—';
+      return;
+    }
+  }
+  document.getElementById('updated').textContent =
+    '更新于 ' + fmtTime(data.updatedAt) + (data.stale ? ' (缓存数据)' : '');
+  if (!data.items || !data.items.length) {
+    list.innerHTML = '<div class="empty">这个地区 / 分类下没有热门视频</div>';
+    return;
+  }
+  var out = '<div class="grid">';
+  data.items.forEach(function (it, i) {
+    out += '<div class="card">';
+    out += '<a class="thumb" href="https://www.youtube.com/watch?v=' + esc(it.id) + '" target="_blank" rel="noopener">';
+    if (it.thumbnail) out += '<img src="' + esc(it.thumbnail) + '" alt="" loading="lazy">';
+    out += '<span class="rank">#' + (i + 1) + '</span></a>';
+    out += '<div class="body"><h3><a href="https://www.youtube.com/watch?v=' + esc(it.id) + '" target="_blank" rel="noopener">' + esc(it.title) + '</a></h3>';
+    out += '<div class="channel">' + esc(it.channelTitle) + '</div>';
+    out += '<div class="stats">' + fmtNum(it.views) + ' 次观看 · ' + fmtNum(it.likes) + ' 赞';
+    if (it.comments != null) out += ' · ' + fmtNum(it.comments) + ' 条评论';
+    out += ' · ' + esc(fmtDate(it.publishedAt)) + '</div></div></div>';
+  });
+  out += '</div>';
+  list.innerHTML = out;
+}
+
+var loading = false;
+function load() {
+  if (loading) return;
+  loading = true;
+  document.getElementById('list').innerHTML = '<div class="loading">加载中…</div>';
+  fetch('/api/trending?region=' + encodeURIComponent(region) + '&category=' + encodeURIComponent(category))
+    .then(function (r) { return r.json(); })
+    .then(function (data) { loading = false; render(data); })
+    .catch(function (err) {
+      loading = false;
+      document.getElementById('notice').innerHTML = '<div class="error">请求失败:' + esc(err.message) + '</div>';
+      document.getElementById('list').innerHTML = '<div class="empty">暂无数据,稍后再试</div>';
+    });
+}
+
+document.getElementById('category').addEventListener('change', function (e) {
+  category = e.target.value;
+  load();
+});
+document.getElementById('refresh').addEventListener('click', load);
+renderRegions();
+renderCategories();
+load();
+</script>
+</body>
+</html>
